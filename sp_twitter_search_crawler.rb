@@ -12,44 +12,36 @@ def wait_for_complete
 end
 
 @chrome = ChromeRemote.client
-@chrome.send_cmd "Network.enable"
-js = "window.location = 'https://twitter.com/home?lang=ja'"
-@chrome.send_cmd "Runtime.evaluate", expression: js
-cookies = JSON.parse(File.read("cookie.json"))
-# @chrome.send_cmd('Network.setCookies', cookieObject: cookies)
-@chrome.send_cmd "Network.setCookies", cookies: cookies
 
-js = "window.location = 'https://twitter.com/home?lang=ja'"
+
+@chrome.send_cmd('Network.enable')
+
+request_id = nil
+Timeout.timeout(30) do
+  @chrome.on('Network.responseReceived') do |res|
+    if res["response"]["url"].include?("SearchTimeline")
+      request_id = res["requestId"]
+    end
+    @chrome.listen_until { request_id }
+  end
+end
+
+search_text = gets.chomp
+js = "window.location = 'https://twitter.com/search?q=#{search_text}&src=typed_query&f=user'"
 sleep 1
 @chrome.send_cmd "Runtime.evaluate", expression: js
+wait_for_complete
 
-# search_text = gets.chomp
-# js = "window.location = 'https://twitter.com/search?q=#{search_text}&src=typed_query&f=user'"
-# sleep 1
-# @chrome.send_cmd "Runtime.evaluate", expression: js
-# wait_for_complete
+time = Time.now
 
-# @chrome.send_cmd('Network.enable')
-
-# def getResponse
-#   request_id = nil
-#   Timeout.timeout(30) do
-#     @chrome.on('Network.responseReceived') do |res|
-#       if res["response"]["url"].include?("SearchTimeline")
-#         request_id = res["requestId"]
-#         puts request_id
-#       end
-#     end
-#     @chrome.listen_until { request_id }
-#   end
-#   puts request_id
-#   @chrome.send_cmd("Network.getRequestPostData", requestId: request_id)
-# end
-
-# loop do
-#   js = "window.scrollBy({ top: document.querySelector('div[data-testid=\"cellInnerDiv\"]:last-child').getBoundingClientRect().top, behavior: 'smooth' })"
-#   sleep 1
-#   @chrome.send_cmd "Runtime.evaluate", expression: js
-#   wait_for_complete
-#   # break if doc.at_css("div[data-testid='cellInnerDiv']:last-child span")&.inner_text == "問題が発生しました。再読み込みしてください。"
-# end
+CSV.open("sp_twitter_search_crawler.csv", "w") do |csv|
+  csv << ["検索ワード", "クロール日時", "ユーザー名", "ユーザーID", "画像URL", "アカウントURL", "アカウント説明文"]
+  loop do
+    js = "window.scrollBy({ top: document.querySelector('div[data-testid=\"cellInnerDiv\"]:last-child').getBoundingClientRect().top, behavior: 'smooth' })"
+    sleep 1
+    @chrome.send_cmd "Runtime.evaluate", expression: js
+    wait_for_complete
+    response_body = @chrome.send_cmd("Network.getResponseBody", requestId: request_id)
+    pp response_body
+  end
+end
