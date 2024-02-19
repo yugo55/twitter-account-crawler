@@ -2,6 +2,7 @@ require 'chrome_remote'
 require 'nokogiri'
 require 'csv'
 require 'timeout'
+require 'json'
 
 def wait_for_complete
   loop do
@@ -34,14 +35,17 @@ wait_for_complete
 
 time = Time.now
 
-CSV.open("sp_twitter_search_crawler.csv", "w") do |csv|
-  csv << ["検索ワード", "クロール日時", "ユーザー名", "ユーザーID", "画像URL", "アカウントURL", "アカウント説明文"]
+# CSV.open("sp_twitter_search_crawler.csv", "w") do |csv|
+  # csv << ["検索ワード", "クロール日時", "ユーザー名", "ユーザーID", "画像URL", "アカウントURL", "アカウント説明文"]
   loop do
     js = "window.scrollBy({ top: document.querySelector('div[data-testid=\"cellInnerDiv\"]:last-child').getBoundingClientRect().top, behavior: 'smooth' })"
     sleep 1
     @chrome.send_cmd "Runtime.evaluate", expression: js
     wait_for_complete
     response_body = @chrome.send_cmd("Network.getResponseBody", requestId: request_id)
-    pp response_body
+    parsed_response_body = JSON.parse(response_body["body"])
+    parsed_response_body["data"]["search_by_raw_query"]["search_timeline"]["timeline"]["instructions"][0]["entries"].each do |user|
+      
+    end
   end
-end
+# end
