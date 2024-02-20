@@ -7,36 +7,25 @@ require 'json'
 @chrome.send_cmd('Network.enable')
 
 request_id = nil
-request_id_array = []
-
-@chrome.on('Network.responseReceived') do |res|
-  if res["response"]["url"].include?("SearchTimeline")
-    request_id = res["requestId"]
-    request_id_array << request_id
+Timeout.timeout(30) do
+  @chrome.on('Network.responseReceived') do |res|
+    if res["response"]["url"].include?("SearchTimeline")
+      request_id = res["requestId"]
+    end
   end
-end
 
-js = "window.location = 'https://twitter.com/search?q=#{ARGV[0]}&src=typed_query&f=user'"
-sleep 1
-@chrome.send_cmd "Runtime.evaluate", expression: js
-
-loop do
-  request_id = nil
-  js = "window.scrollBy({ top: document.querySelector('div[data-testid=\"cellInnerDiv\"]:last-child').getBoundingClientRect().top, behavior: 'smooth' })"
+  js = "window.location = 'https://twitter.com/search?q=#{ARGV[0]}&src=typed_query&f=user'"
   sleep 1
   @chrome.send_cmd "Runtime.evaluate", expression: js
-  Timeout.timeout(30) do
-    @chrome.listen_until { request_id }
-  end
-  response_body = @chrome.send_cmd("Network.getResponseBody", requestId: request_id_array.last)["body"]
-  break if response_body == "Rate limit exceeded\n"
+
+  @chrome.listen_until { request_id }
 end
 
-request_id_array.pop
+time = Time.now
 
-def first_parser(time, request_id_array)
+def first_parser(time, request_id)
   user_data_array = []
-  response_body = @chrome.send_cmd("Network.getResponseBody", requestId: request_id_array[0])["body"]
+  response_body = @chrome.send_cmd("Network.getResponseBody", requestId: request_id)["body"]
   parsed_response_body = JSON.parse(response_body)
   parsed_response_body["data"]["search_by_raw_query"]["search_timeline"]["timeline"]["instructions"][1]["entries"].each do |user|
     next unless user["content"]["itemContent"]
@@ -53,9 +42,8 @@ def first_parser(time, request_id_array)
   user_data_array
 end
 
-def parser(time, request_id)
+def parser(time, request_id, response_body)
   user_data_array = []
-  response_body = @chrome.send_cmd("Network.getResponseBody", requestId: request_id)["body"]
   parsed_response_body = JSON.parse(response_body)
   parsed_response_body["data"]["search_by_raw_query"]["search_timeline"]["timeline"]["instructions"][0]["entries"].each do |user|
   next unless user["content"]["itemContent"]
@@ -73,12 +61,21 @@ def parser(time, request_id)
 end
 
 CSV.open("sp_twitter_search_crawler.csv", "w", force_quotes: true) do |csv|
-  time = Time.now
-  first_parser(time, request_id_array).each do |user_data|
+  csv << ["検索ワード", "クロール日時",  "ユーザー名", "ユーザーID", "フォロー数", "フォロワー数", "画像URL", "アカウントURL", "アカウント説明文"]
+  first_parser(time, request_id).each do |user_data|
     csv << user_data
   end
-  request_id_array.drop(1).each do |request_id|
-    parser(time, request_id).each do |user_data|
+  loop do
+    request_id = nil
+    js = "window.scrollBy({ top: document.querySelector('div[data-testid=\"cellInnerDiv\"]:last-child').getBoundingClientRect().top, behavior: 'smooth' })"
+    sleep 1
+    @chrome.send_cmd "Runtime.evaluate", expression: js
+    Timeout.timeout(30) do
+      @chrome.listen_until { request_id }
+    end
+    response_body = @chrome.send_cmd("Network.getResponseBody", requestId: request_id)["body"]
+    break if response_body == "Rate limit exceeded\n"
+    parser(time, request_id, response_body).each do |user_data|
       csv << user_data
     end
   end
