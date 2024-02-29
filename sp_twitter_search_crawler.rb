@@ -25,7 +25,7 @@ def scroll_to_get_request_id(request_id_array)
 end
 
 
-def first_parser(time, request_id_array, search_word)
+def first_parser(request_id_array)
   user_data_array = []
   response_body = @chrome.send_cmd("Network.getResponseBody", requestId: request_id_array[0])["body"]
   parsed_response_body = JSON.parse(response_body)
@@ -39,12 +39,12 @@ def first_parser(time, request_id_array, search_word)
     img_url = user_info["profile_image_url_https"]
     account_url = "https://twitter.com/" + user_id
     user_description = user_info["description"]
-    user_data_array << [search_word, time, user_name, "@" + user_id, follow_count, follower_count, img_url, account_url, user_description]
+    user_data_array << [user_name, "@" + user_id, follow_count, follower_count, img_url, account_url, user_description]
   end
   user_data_array
 end
 
-def parser(time, request_id, search_word)
+def parser(request_id)
   user_data_array = []
   response_body = @chrome.send_cmd("Network.getResponseBody", requestId: request_id)["body"]
   parsed_response_body = JSON.parse(response_body)
@@ -58,7 +58,7 @@ def parser(time, request_id, search_word)
     img_url = user_info["profile_image_url_https"]
     account_url = "https://twitter.com/" + user_id
     user_description = user_info["description"]
-    user_data_array << [search_word, time, user_name, "@" + user_id, follow_count, follower_count, img_url, account_url, user_description]
+    user_data_array << [user_name, "@" + user_id, follow_count, follower_count, img_url, account_url, user_description]
   end
   user_data_array
 end
@@ -78,12 +78,13 @@ scroll_to_get_request_id(request_id_array)
 
 CSV.open("sp_twitter_search_crawler.csv", "w", force_quotes: true) do |csv|
   time = Time.now
-  first_parser(time, request_id_array, search_word).each do |user_data|
-    csv << user_data
+  csv << ["検索ワード", "クロール日時", "ユーザー名", "ユーザーID", "フォロー数", "フォロワー数", "画像URL", "アカウントURL", "ユーザー説明文"]
+  first_parser(request_id_array).each do |user_data|
+    csv << [search_word, time, user_data].flatten
   end
   request_id_array.drop(1).each do |request_id|
-    parser(time, request_id, search_word).each do |user_data|
-      csv << user_data
+    parser(request_id).each do |user_data|
+      csv << [search_word, time, user_data].flatten
     end
   end
 end
